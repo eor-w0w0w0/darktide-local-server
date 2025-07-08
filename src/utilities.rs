@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::io::Cursor;
+use std::{io::Cursor};
 use tiny_http::{Header, Response, StatusCode};
 
 /// Splits a string into space-separated segments, ignoring spaces in quoted substrings

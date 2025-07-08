@@ -12,10 +12,21 @@ pub struct RunRequest {
 }
 
 #[derive(Serialize)]
+pub struct ProcessRunningResponse {
+    process_is_running: bool,
+}
+#[derive(Serialize)]
 pub struct RunResponse {
     pub success: bool,
     pub pid: Option<u32>,
 }
+
+#[derive(Serialize, Clone)]
+pub struct PortForward {
+    pub port: u16,
+    pub address: String,
+}
+
 
 pub fn allowed_executables() -> HashSet<String> {
     let mut set = HashSet::new();

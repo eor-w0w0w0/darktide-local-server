@@ -3,11 +3,9 @@
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use lazy_static::lazy_static;
-use serde::Serialize;
 use serde_json::from_reader;
 use std::{
-    collections::HashSet, env, ffi::OsStr, fs::File, io::Result as IoResult,
-    os::windows::ffi::OsStrExt, ptr, sync::Mutex, thread, time::Duration,
+    collections::HashSet, env, ffi::OsStr, fs::File, io::Result as IoResult, os::windows::ffi::OsStrExt,  ptr, sync::{Arc, Mutex}, thread, time::Duration
 };
 use tiny_http::{Server, StatusCode};
 use winapi::{
@@ -26,6 +24,7 @@ mod handlers {
     pub mod run;
     pub mod shutdown;
     pub mod stop_process;
+    pub mod port_forward;
 }
 
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
@@ -36,12 +35,10 @@ use handlers::{
     stop_process::handle_stop_process_request,
 };
 use processes::{is_darktide_running, is_process_running};
-use utilities::empty_response_with_status;
+use utilities::{empty_response_with_status};
 
-#[derive(Serialize)]
-struct ProcessRunningResponse {
-    process_is_running: bool,
-}
+use crate::handlers::port_forward::{forward_port, remove_portforward};
+
 
 lazy_static! {
     static ref CREATED_PIDS: Mutex<HashSet<u32>> = Mutex::new(HashSet::new());
@@ -87,9 +84,28 @@ fn main() -> IoResult<()> {
         Receiver<tiny_http::Request>,
     ) = unbounded();
 
-    thread::spawn(|| loop {
+    let mut forwarded: Arc<bool> = Arc::new(false);
+    
+    let target_address: Arc<constants::PortForward> = forward_port(port);
+    
+    if !target_address.address.is_empty() {
+        forwarded = Arc::new(true);
+        println!("Port forwarding enabled for port {}", port);
+    } else {
+        eprintln!("Failed to forward port {}", port);
+    }
+
+    let target_address_for_shutdown = Arc::clone(&target_address);
+    let target_address_for_monitor = Arc::clone(&target_address);
+    let forwarded_for_monitor = Arc::clone(&forwarded);
+    let forwarded_for_shutdown = Arc::clone(&forwarded);
+
+    thread::spawn(move || loop {
         if !is_darktide_running() {
             println!("Darktide.exe is not running. Shutting down.");
+            if *forwarded_for_monitor {
+                remove_portforward(target_address_for_monitor.address.clone());
+            }
             std::process::exit(1);
         }
         thread::sleep(Duration::from_secs(1));
@@ -103,13 +119,14 @@ fn main() -> IoResult<()> {
                 .respond(response.unwrap_or_else(|_| empty_response_with_status(StatusCode(400))));
         }
     });
-
+    
     // Main thread for other requests
+    let target_address = target_address_for_shutdown;
     thread::spawn(move || {
         for mut request in server.incoming_requests() {
             let url = request.url().to_string();
-            let method = request.method().to_string();
-
+            let method = request.method().to_string();            
+            let target_address = Arc::clone(&target_address);
             if method == "GET" {
                 if url.starts_with("/dds_image") {
                     let response = handle_dds_image_request(&request)
@@ -138,6 +155,9 @@ fn main() -> IoResult<()> {
                 }
 
                 if url == "/shutdown" {
+                    if *forwarded_for_shutdown {
+                        remove_portforward(target_address.address.clone());
+                    }
                     handle_shutdown_request();
                 }
 
@@ -165,3 +185,5 @@ fn main() -> IoResult<()> {
         thread::sleep(Duration::from_secs(60));
     }
 }
+
+
