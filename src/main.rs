@@ -121,12 +121,11 @@ fn main() -> IoResult<()> {
     });
     
     // Main thread for other requests
-    let target_address = target_address_for_shutdown;
+    
     thread::spawn(move || {
         for mut request in server.incoming_requests() {
             let url = request.url().to_string();
-            let method = request.method().to_string();            
-            let target_address = Arc::clone(&target_address);
+            let method = request.method().to_string();                        
             if method == "GET" {
                 if url.starts_with("/dds_image") {
                     let response = handle_dds_image_request(&request)
@@ -156,7 +155,7 @@ fn main() -> IoResult<()> {
 
                 if url == "/shutdown" {
                     if *forwarded_for_shutdown {
-                        remove_portforward(target_address.address.clone());
+                        remove_portforward(target_address_for_shutdown.address.clone());
                     }
                     handle_shutdown_request();
                 }
