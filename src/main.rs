@@ -5,7 +5,16 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use lazy_static::lazy_static;
 use serde_json::from_reader;
 use std::{
-    collections::HashSet, env, ffi::OsStr, fs::File, io::Result as IoResult, os::windows::ffi::OsStrExt,  ptr, sync::{Arc, Mutex}, thread, time::Duration
+    collections::HashSet,
+    env,
+    ffi::OsStr,
+    fs::File,
+    io::Result as IoResult,
+    os::windows::ffi::OsStrExt,
+    ptr,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
 };
 use tiny_http::{Server, StatusCode};
 use winapi::{
@@ -20,11 +29,11 @@ mod handlers {
     pub mod dds_image;
     pub mod image;
     pub mod list_directory;
+    pub mod port_forward;
     pub mod process_running;
     pub mod run;
     pub mod shutdown;
     pub mod stop_process;
-    pub mod port_forward;
 }
 
 use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
@@ -35,11 +44,9 @@ use handlers::{
     stop_process::handle_stop_process_request,
 };
 use processes::{is_darktide_running, is_process_running};
-use utilities::{empty_response_with_status};
+use utilities::empty_response_with_status;
 
 use crate::handlers::port_forward::{forward_port, remove_portforward};
-
-
 lazy_static! {
     static ref CREATED_PIDS: Mutex<HashSet<u32>> = Mutex::new(HashSet::new());
 }
@@ -68,7 +75,7 @@ fn main() -> IoResult<()> {
 
     let port = config.port.unwrap_or(DEFAULT_PORT);
 
-    let server = match Server::http(format!("0.0.0.0:{}", port)) {
+    let server = match Server::http(format!("127.0.0.1:{}", port)) {
         Ok(server) => server,
         Err(err) => {
             eprintln!("Failed to create server: {}", err);
@@ -85,9 +92,9 @@ fn main() -> IoResult<()> {
     ) = unbounded();
 
     let mut forwarded: Arc<bool> = Arc::new(false);
-    
+
     let target_address: Arc<constants::PortForward> = forward_port(port);
-    
+
     if !target_address.address.is_empty() {
         forwarded = Arc::new(true);
         println!("Port forwarding enabled for port {}", port);
@@ -108,7 +115,7 @@ fn main() -> IoResult<()> {
             }
             std::process::exit(1);
         }
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_secs(5));
     });
 
     // Thread to handle /process_running requests
@@ -119,13 +126,13 @@ fn main() -> IoResult<()> {
                 .respond(response.unwrap_or_else(|_| empty_response_with_status(StatusCode(400))));
         }
     });
-    
+
     // Main thread for other requests
-    
+
     thread::spawn(move || {
         for mut request in server.incoming_requests() {
             let url = request.url().to_string();
-            let method = request.method().to_string();                        
+            let method = request.method().to_string();
             if method == "GET" {
                 if url.starts_with("/dds_image") {
                     let response = handle_dds_image_request(&request)
@@ -184,5 +191,3 @@ fn main() -> IoResult<()> {
         thread::sleep(Duration::from_secs(60));
     }
 }
-
-

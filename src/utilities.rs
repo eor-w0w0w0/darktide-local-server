@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::{io::Cursor};
+use std::io::Cursor;
 use tiny_http::{Header, Response, StatusCode};
 
 /// Splits a string into space-separated segments, ignoring spaces in quoted substrings
@@ -43,7 +43,7 @@ pub fn json_response_with_status<T: Serialize>(
     let json_bytes = serde_json::to_vec(data).unwrap_or_else(|_| vec![]);
     let content_length = json_bytes.len();
     let cursor = Cursor::new(json_bytes);
-    
+
     let mut response = Response::new(status, vec![], cursor, Some(content_length), None);
     let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
     response.add_header(header);

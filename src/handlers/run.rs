@@ -2,13 +2,12 @@ use serde_json::json;
 use std::{
     io::Cursor,
     os::windows::process::CommandExt,
-    path::Path,
     process::{Command, Stdio},
 };
 use tiny_http::{Request, Response, StatusCode};
 use winapi::um::winbase::CREATE_NO_WINDOW;
 
-use crate::constants::{allowed_executables, RunRequest, PID, SUCCESS};
+use crate::constants::{RunRequest, PID, SUCCESS};
 use crate::utilities::split_command;
 use crate::CREATED_PIDS;
 
@@ -30,26 +29,6 @@ pub fn handle_run_request(request: &mut Request) -> Result<Response<Cursor<Vec<u
     }
 
     let (executable, args) = segments.split_first().unwrap();
-
-    // Get segment after the last slash (if any)
-    let executable_name = Path::new(executable)
-        .file_name()
-        .and_then(|os_str| os_str.to_str())
-        .unwrap_or(executable);
-
-    // Remove ".exe" extension (if any)
-    let executable_name_normalized = if executable_name.to_lowercase().ends_with(".exe") {
-        &executable_name[0..executable_name.len() - 4]
-    } else {
-        executable_name
-    };
-
-    let allowed_set = allowed_executables();
-    if !allowed_set.contains(executable_name_normalized) {
-        let response_body = json!({ SUCCESS: false });
-        let json_string = response_body.to_string();
-        return Ok(Response::from_string(json_string).with_status_code(StatusCode(403)));
-    }
 
     match Command::new(executable)
         .args(args)

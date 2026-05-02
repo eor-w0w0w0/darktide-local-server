@@ -1,5 +1,4 @@
 use crate::utilities::empty_response_with_status;
-use image::GenericImageView;
 use lofty::{read_from_path, Accessor, AudioFile, TaggedFileExt};
 use mime_guess::mime;
 use serde::Serialize;
@@ -235,7 +234,10 @@ fn gather_file_info(
                 );
 
                 if !subdirectory_info.is_empty() {
-                    Some((entry.file_name().to_string_lossy().to_string(), DirectoryItem::Directory(subdirectory_info)))
+                    Some((
+                        entry.file_name().to_string_lossy().to_string(),
+                        DirectoryItem::Directory(subdirectory_info),
+                    ))
                 } else {
                     None
                 }
@@ -244,7 +246,7 @@ fn gather_file_info(
             }
         })
         .collect()
-}  
+}
 
 fn process_file_info(
     path: &Path,
@@ -300,7 +302,7 @@ fn set_general_info(file_info: &mut FileInfo, metadata: &fs::Metadata, path: &Pa
     );
 
     file_info.r#type = Some(if metadata.is_dir() {
-       DIRECTORY_STR.to_string()
+        DIRECTORY_STR.to_string()
     } else {
         FILE_STR.to_string()
     });
@@ -329,10 +331,9 @@ fn set_image_info(file_info: &mut FileInfo, path: &Path) {
     let mime_type = mime_guess::from_path(path).first_or_octet_stream();
 
     if mime_type.type_() == mime::IMAGE {
-        if let Ok(img) = image::open(path) {
-            let dimensions = img.dimensions();
-            file_info.width = Some(dimensions.0);
-            file_info.height = Some(dimensions.1);
+        if let Ok((width, height)) = image::image_dimensions(path) {
+            file_info.width = Some(width);
+            file_info.height = Some(height);
         }
     }
 }

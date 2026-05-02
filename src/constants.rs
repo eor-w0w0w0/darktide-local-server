@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 #[derive(Default, Deserialize)]
 pub struct Config {
@@ -25,13 +24,6 @@ pub struct RunResponse {
 pub struct PortForward {
     pub port: u16,
     pub address: String,
-}
-
-
-pub fn allowed_executables() -> HashSet<String> {
-    let mut set = HashSet::new();
-    set.insert("ffplay_dt".to_string());
-    set
 }
 
 pub const MUTEX_NAME: &str = "Global\\DarktideLocalServerMutex";
