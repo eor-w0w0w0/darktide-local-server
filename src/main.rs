@@ -32,7 +32,6 @@ mod handlers {
     pub mod port_forward;
     pub mod process_running;
     pub mod run;
-    pub mod shutdown;
     pub mod stop_process;
 }
 
@@ -40,13 +39,12 @@ use constants::{Config, CONFIG_NAME, DEFAULT_PORT, MUTEX_NAME};
 use handlers::{
     dds_image::handle_dds_image_request, image::handle_image_request,
     list_directory::handle_list_directory, process_running::handle_process_running_request,
-    run::handle_run_request, shutdown::handle_shutdown_request,
-    stop_process::handle_stop_process_request,
+    run::handle_run_request, stop_process::handle_stop_process_request,
 };
 use processes::{is_darktide_running, is_process_running};
 use utilities::empty_response_with_status;
-
 use crate::handlers::port_forward::{forward_port, remove_portforward};
+
 lazy_static! {
     static ref CREATED_PIDS: Mutex<HashSet<u32>> = Mutex::new(HashSet::new());
 }
@@ -74,6 +72,7 @@ fn main() -> IoResult<()> {
     };
 
     let port = config.port.unwrap_or(DEFAULT_PORT);
+    let enable_portproxy = config.enable_portproxy.unwrap_or(false);
 
     let server = match Server::http(format!("127.0.0.1:{}", port)) {
         Ok(server) => server,
@@ -91,27 +90,29 @@ fn main() -> IoResult<()> {
         Receiver<tiny_http::Request>,
     ) = unbounded();
 
-    let mut forwarded: Arc<bool> = Arc::new(false);
-
-    let target_address: Arc<constants::PortForward> = forward_port(port);
-
-    if !target_address.address.is_empty() {
-        forwarded = Arc::new(true);
-        println!("Port forwarding enabled for port {}", port);
+    let forwarded_address = if enable_portproxy {
+        match forward_port(port) {
+            Some(address) => {
+                println!("Port forwarding enabled: {}:80 -> 127.0.0.1:{}", address, port);
+                Some(Arc::new(address))
+            }
+            None => {
+                eprintln!("Failed to enable port forwarding for port {}", port);
+                None
+            }
+        }
     } else {
-        eprintln!("Failed to forward port {}", port);
-    }
+        None
+    };
 
-    let target_address_for_shutdown = Arc::clone(&target_address);
-    let target_address_for_monitor = Arc::clone(&target_address);
-    let forwarded_for_monitor = Arc::clone(&forwarded);
-    let forwarded_for_shutdown = Arc::clone(&forwarded);
+    let forwarded_address_for_monitor = forwarded_address.clone();
+    let forwarded_address_for_shutdown = forwarded_address.clone();
 
     thread::spawn(move || loop {
         if !is_darktide_running() {
             println!("Darktide.exe is not running. Shutting down.");
-            if *forwarded_for_monitor {
-                remove_portforward(target_address_for_monitor.address.clone());
+            if let Some(address) = &forwarded_address_for_monitor {
+                remove_portforward(address.as_ref());
             }
             std::process::exit(1);
         }
@@ -122,8 +123,7 @@ fn main() -> IoResult<()> {
     thread::spawn(move || {
         for request in process_running_receiver.iter() {
             let response = handle_process_running_request(&request, is_process_running);
-            let _ = request
-                .respond(response.unwrap_or_else(|_| empty_response_with_status(StatusCode(400))));
+            let _ = request.respond(response);
         }
     });
 
@@ -161,10 +161,10 @@ fn main() -> IoResult<()> {
                 }
 
                 if url == "/shutdown" {
-                    if *forwarded_for_shutdown {
-                        remove_portforward(target_address_for_shutdown.address.clone());
+                    if let Some(address) = &forwarded_address_for_shutdown {
+                        remove_portforward(address.as_ref());
                     }
-                    handle_shutdown_request();
+                    std::process::exit(0);
                 }
 
                 if url.starts_with("/stop_process") {

@@ -1,95 +1,93 @@
-use std::{process::Command, sync::Arc};
-
 use regex::Regex;
+use std::process::Command;
 
-use crate::constants::PortForward;
-
-/// Forward a port using netsh portproxy
-pub fn forward_port(port: u16) -> Arc<PortForward> {
+pub fn forward_port(port: u16) -> Option<String> {
     clear_endpoints(port);
-    let endpoint = get_endpoint();
-    let target_address = Arc::new(PortForward {
-        port,
-        address: format!("127.0.0.{endpoint}"),
-    });
 
+    let address = format!("127.0.0.{}", get_endpoint());
     let output = Command::new("netsh")
-        .args(&[
+        .args([
             "interface",
             "portproxy",
             "add",
             "v4tov4",
-            &format!("listenaddress={}", &target_address.address),
+            &format!("listenaddress={}", address),
             "listenport=80",
             "connectaddress=127.0.0.1",
             &format!("connectport={}", port),
         ])
         .output()
-        .expect("failed to retrieve portproxy");
-    let _outputStr = String::from_utf8_lossy(&output.stdout);
+        .ok()?;
+
     if output.status.success() {
-        return target_address;
+        Some(address)
+    } else {
+        eprintln!(
+            "Failed to forward port {}: {}",
+            port,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        None
     }
-    eprintln!(
-        "Failed to forward port {}: {}",
-        port,
-        String::from_utf8_lossy(&output.stderr)
-    );
-    return Arc::new(PortForward {
-        port,
-        address: String::new(),
-    }); // Return
 }
 
-pub fn remove_portforward(target_address: String) {
-    let _output = Command::new("netsh")
-        .args(&[
+pub fn remove_portforward(target_address: &str) {
+    let _ = Command::new("netsh")
+        .args([
             "interface",
             "portproxy",
             "delete",
             "v4tov4",
-            &format!("listenaddress={}", &target_address),
+            &format!("listenaddress={}", target_address),
             "listenport=80",
         ])
-        .output()
-        .expect("failed to retrieve portproxy");
+        .output();
 }
 
-pub fn clear_endpoints(targetPort: u16) {
-    let output = Command::new("netsh")
-        .args(&["interface", "portproxy", "show", "v4tov4"])
+fn clear_endpoints(target_port: u16) {
+    let output = match Command::new("netsh")
+        .args(["interface", "portproxy", "show", "v4tov4"])
         .output()
-        .expect("failed to retrieve portproxy");
-    if output.status.success() {
-        let outputStr = String::from_utf8_lossy(&output.stdout);
-        let existing_forwards = outputStr.lines();
-        if existing_forwards.count() > 0 {
-            let re = Regex::new(format!(r".*{}$", targetPort).as_str()).unwrap();
-            let decimal_lines: Vec<&str> =
-                outputStr.lines().filter(|line| re.is_match(line)).collect();
+    {
+        Ok(output) => output,
+        Err(_) => return,
+    };
 
-            for line in decimal_lines {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                remove_portforward(parts[0].to_string());
-            }
+    if !output.status.success() {
+        return;
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let re = Regex::new(format!(r".*{}$", target_port).as_str()).unwrap();
+
+    for line in output_str.lines().filter(|line| re.is_match(line)) {
+        if let Some(address) = line.split_whitespace().next() {
+            remove_portforward(address);
         }
     }
 }
-// Cycle through the endpoints until we find a match, starting with 127.0.0.80
-pub fn get_endpoint() -> u16 {
-    let output = Command::new("netsh")
-        .args(&["interface", "portproxy", "show", "v4tov4"])
+
+fn get_endpoint() -> u16 {
+    let output = match Command::new("netsh")
+        .args(["interface", "portproxy", "show", "v4tov4"])
         .output()
-        .expect("failed to retrieve portproxy");
-    if output.status.success() {
-        let outputStr = String::from_utf8_lossy(&output.stdout);
-        let mut targetAddr = 80;
-        let mut re = Regex::new(format!("127.0.0.{}", targetAddr).as_str()).unwrap();
-        while re.is_match(&outputStr) {
-            targetAddr += 1;
-            re = Regex::new(format!("127.0.0.{}", targetAddr).as_str()).unwrap();
-        }
-        return targetAddr;
+    {
+        Ok(output) => output,
+        Err(_) => return 80,
+    };
+
+    if !output.status.success() {
+        return 80;
     }
-    return 80;
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let mut endpoint = 80;
+
+    loop {
+        let address = format!("127.0.0.{}", endpoint);
+        if !output_str.contains(&address) {
+            return endpoint;
+        }
+        endpoint += 1;
+    }
 }

@@ -1,8 +1,7 @@
-use crate::utilities::empty_response_with_status;
+use crate::utilities::{empty_response_with_status, json_response_with_status};
 use lofty::{read_from_path, Accessor, AudioFile, TaggedFileExt};
 use mime_guess::mime;
 use serde::Serialize;
-use serde_json::to_string;
 use std::{collections::HashMap, fs, io::Cursor, path::Path};
 use tiny_http::{Request, Response, StatusCode};
 use url::form_urlencoded;
@@ -137,12 +136,12 @@ pub fn handle_list_directory(request: &Request) -> Option<Response<Cursor<Vec<u8
             contents: files_info,
         };
 
-        Some(create_json_response(response_data, StatusCode(200)))
+        Some(json_response_with_status(StatusCode(200), &response_data))
     } else {
         let contents = list_directory_contents(path, sub_directories);
         let response_data = DirectoryResponse { contents };
 
-        Some(create_json_response(response_data, StatusCode(200)))
+        Some(json_response_with_status(StatusCode(200), &response_data))
     }
 }
 
@@ -336,21 +335,4 @@ fn set_image_info(file_info: &mut FileInfo, path: &Path) {
             file_info.height = Some(height);
         }
     }
-}
-
-fn create_json_response<T: Serialize>(
-    data: T,
-    status_code: StatusCode,
-) -> Response<Cursor<Vec<u8>>> {
-    let json_response = to_string(&data).unwrap();
-    let json_length = json_response.len();
-    let cursor = Cursor::new(json_response.into_bytes());
-
-    Response::new(
-        status_code,
-        vec![tiny_http::Header::from_bytes(&b"Content-Type"[..], "application/json").unwrap()],
-        cursor,
-        Some(json_length),
-        None,
-    )
 }

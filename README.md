@@ -54,13 +54,16 @@ If unsuccessful it will only return `success`:
 ```
 
 ### Customising the port
-To use a different port number than `41012`, create a `config.json` file next to `DarktideLocalServer.exe` with a `port` property. For example, to set the number to `1234`:
+To use a different port number than `41012`, create a `config.json` file next to `DarktideLocalServer.exe` with a `port` property. You can also enable a Windows `netsh portproxy` loopback alias for Microsoft Store/Game Pass compatibility with `enable_portproxy`.
 
 ```json
 {
-	"port": 1234
+	"port": 1234,
+	"enable_portproxy": false
 }
 ```
+
+When `enable_portproxy` is `true`, the server also creates a loopback alias like `127.0.0.80:80 -> 127.0.0.1:<port>` at runtime and removes it again on shutdown.
 
 ## Notes
 
